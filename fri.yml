@@ -1,0 +1,8 @@
+- name: Sigurd
+  from: "2020-08-10T00:00:00Z"
+  to: "2020-12-01T00:00:00Z"
+  reason: Vacation
+- name: Frode
+  from: 2020-01-01T00:00:00Z
+  to: 2020-12-31T00:00:00Z
+  reason: Whatever

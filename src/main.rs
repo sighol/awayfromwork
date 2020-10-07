@@ -4,6 +4,7 @@ use std::fmt;
 use std::io::prelude::*;
 use std::collections::HashMap;
 use chrono::prelude::*;
+use colored::*;
 
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
@@ -28,11 +29,12 @@ struct Turnus {
     soldiers: Vec<String>
 }
 
-#[allow(dead_code)]
-struct Free {
+#[derive(Debug, Serialize, Deserialize)]
+struct Break {
     name: String,
-    from: Date::<Utc>,
-    to: Date::<Utc>,
+    from: DateTime::<Utc>,
+    to: DateTime::<Utc>,
+    reason: Option<String>,
 }
 
 #[derive(Debug)]
@@ -45,16 +47,19 @@ struct TurnusDay {
 }
 
 impl TurnusDay {
-    fn print(&self) {
-        println!("{}: {} {}", self.day, self.turnus_name, self.work_type);
-        for soldier in self.soldiers.iter() {
-            println!(" - {}", soldier)
+    fn print(&self, break_people: &[String]) {
+        println!("{} | {} | {}", self.day, self.turnus_name.blue(), self.work_type.to_string().cyan());
+        for soldier in itertools::sorted(self.soldiers.iter()) {
+            if break_people.iter().any(|x| x == soldier) {
+                println!(" - {} {}", soldier.red(), "(away)".red())
+            } else {
+                println!(" - {}", soldier)
+            }
         }
     }
 }
 
 fn turnus_at_day(turnus: &Turnus, day: Date<Utc>) -> TurnusDay {
-
     let number_of_days = (day - turnus.start.date()).num_days() % 28;
     let work_type = turnus.days.get(&number_of_days).unwrap();
     
@@ -77,24 +82,42 @@ fn read_turnus_file(path: &str) -> Result<Turnus, std::io::Error> {
     return Ok(turnus);
 }
 
+fn read_break(date: DateTime<Utc>) -> Vec<String> {
+    let mut file = File::open("fri.yml").expect("Could not find fri.yml");
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).expect("Failed to read file");
+    let breaks: Vec<Break> = serde_yaml::from_str(&contents).expect("Failed to read fri.yml");
+    let mut free_people = vec![];
+    for b in breaks.iter() {
+        if b.from < date && b.to > date {
+            free_people.push(b.name.clone());
+        }
+    }
+    return free_people;
+}
+
 
 fn main() -> Result<(), std::io::Error> {
     let mut turnuses = vec![];
     let files = fs::read_dir("turnus")?;
+    println!("{}", "Leser input...".white().on_blue().bold());
     for file in files {
         let file_path = file?.path().to_str().unwrap().to_string();
         let turnus = read_turnus_file(&file_path)?;
         turnuses.push(turnus);
     }
     println!("");
-
-    let today = Utc::now().date();
     
+    let today = Utc::now().date();
+    let perm_people = read_break(Utc::now());
+    println!("{}", "Disse personene har fri i dag:".white().on_blue().bold());
+    println!("{:#?}", &perm_people);
+    
+    println!("{}", "Dagens grupper".white().on_blue().bold());
     for turnus in turnuses {
         let turnus_day = turnus_at_day(&turnus, today);
-        turnus_day.print();
+        turnus_day.print(&perm_people);
     }
-
-
+    
     Ok(())
 }
