@@ -10,5 +10,5 @@ edition = "2018"
 serde = { version = "^1.0", features = ["derive"] }
 serde_yaml = "^0.8"
 chrono  = { version = "^0.4.19", features = ["serde"] }
-colored = "*"
+term = "*"
 itertools = "*"

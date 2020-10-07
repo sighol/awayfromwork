@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::fmt;
 use std::io::prelude::*;
+use std::io;
 use std::collections::HashMap;
 use chrono::prelude::*;
-use colored::*;
 
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
@@ -48,10 +48,10 @@ struct TurnusDay {
 
 impl TurnusDay {
     fn print(&self, break_people: &[String]) {
-        println!("{} | {} | {}", self.day, self.turnus_name.blue(), self.work_type.to_string().cyan());
+        println!("{} | {} | {}", self.day, self.turnus_name, self.work_type);
         for soldier in itertools::sorted(self.soldiers.iter()) {
             if break_people.iter().any(|x| x == soldier) {
-                println!(" - {} {}", soldier.red(), "(away)".red())
+                println!(" - {} {}", soldier, "(away)")
             } else {
                 println!(" - {}", soldier)
             }
@@ -96,11 +96,22 @@ fn read_break(date: DateTime<Utc>) -> Vec<String> {
     return free_people;
 }
 
+fn pause() {
+    let mut stdin = io::stdin();
+    let mut stdout = io::stdout();
+
+    // We want the cursor to stay at the end of the line, so we print without a newline and flush manually.
+    write!(stdout, "\nPress any key to continue...").unwrap();
+    stdout.flush().unwrap();
+
+    // Read a single byte and discard
+    let _ = stdin.read(&mut [0u8]).unwrap();
+}
 
 fn main() -> Result<(), std::io::Error> {
     let mut turnuses = vec![];
     let files = fs::read_dir("turnus")?;
-    println!("{}", "Leser input...".white().on_blue().bold());
+    println!("{}", "Leser input...");
     for file in files {
         let file_path = file?.path().to_str().unwrap().to_string();
         let turnus = read_turnus_file(&file_path)?;
@@ -110,14 +121,20 @@ fn main() -> Result<(), std::io::Error> {
     
     let today = Utc::now().date();
     let perm_people = read_break(Utc::now());
-    println!("{}", "Disse personene har fri i dag:".white().on_blue().bold());
-    println!("{:#?}", &perm_people);
-    
-    println!("{}", "Dagens grupper".white().on_blue().bold());
+    println!("{}", "Disse personene har fri i dag:");
+    for person in perm_people.iter() {
+        println!(" - {}", person);
+    }
+    let mut t = term::stdout().unwrap();
+    t.fg(term::color::GREEN).unwrap();
+    writeln!(t, "{}", "\nDagens grupper:").unwrap();
+    t.reset().unwrap();
     for turnus in turnuses {
         let turnus_day = turnus_at_day(&turnus, today);
         turnus_day.print(&perm_people);
     }
+
+    pause();
     
     Ok(())
 }
