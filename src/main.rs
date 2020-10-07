@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::fs::File;
+use std::fs::{self, File};
+use std::fmt;
 use std::io::prelude::*;
 use std::collections::HashMap;
 use chrono::prelude::*;
@@ -11,6 +12,12 @@ enum WorkType {
     Perm,
     Day,
     Night,
+}
+
+impl fmt::Display for WorkType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,6 +37,7 @@ struct Free {
 
 #[derive(Debug)]
 struct TurnusDay {
+    turnus_name: String,
     work_type: WorkType,
     day: Date::<Utc>,
     soldiers: Vec<String>,
@@ -37,25 +45,25 @@ struct TurnusDay {
 }
 
 impl TurnusDay {
-    fn combine(a: Self, b: Self) -> Self {
-        if a.work_type != b.work_type {
-            panic!("Not the same work type")
+    fn print(&self) {
+        println!("{}: {} {}", self.day, self.turnus_name, self.work_type);
+        for soldier in self.soldiers.iter() {
+            println!(" - {}", soldier)
         }
-        a
     }
 }
 
 fn turnus_at_day(turnus: &Turnus, day: Date<Utc>) -> TurnusDay {
 
     let number_of_days = (day - turnus.start.date()).num_days() % 28;
-    println!("This is {} days ago", number_of_days);
     let work_type = turnus.days.get(&number_of_days).unwrap();
     
     TurnusDay {
         work_type: *work_type,
         away_soldiers: vec![],
-        soldiers: vec![],
+        soldiers: turnus.soldiers.clone(),
         day: day,
+        turnus_name: turnus.name.clone(),
     }
 }
 
@@ -71,16 +79,22 @@ fn read_turnus_file(path: &str) -> Result<Turnus, std::io::Error> {
 
 
 fn main() -> Result<(), std::io::Error> {
-    let turnus1 = read_turnus_file("turnus/turnus1.yml")?;
-    let turnus2 = read_turnus_file("turnus/turnus2.yml")?;
-    let turnus = turnus2;
+    let mut turnuses = vec![];
+    let files = fs::read_dir("turnus")?;
+    for file in files {
+        let file_path = file?.path().to_str().unwrap().to_string();
+        let turnus = read_turnus_file(&file_path)?;
+        turnuses.push(turnus);
+    }
+    println!("");
 
     let today = Utc::now().date();
-    let turnus_day = turnus_at_day(&turnus, today);
-    println!("Turnus day: {:?}", turnus_day);
+    
+    for turnus in turnuses {
+        let turnus_day = turnus_at_day(&turnus, today);
+        turnus_day.print();
+    }
 
-
-    let s = serde_yaml::to_string(&turnus).unwrap();
 
     Ok(())
 }
