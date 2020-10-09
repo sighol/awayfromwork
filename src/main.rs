@@ -1,5 +1,6 @@
 use chrono::prelude::*;
 use clap::App;
+use clap::Arg;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -44,19 +45,6 @@ struct TurnusDay {
     day: Date<Utc>,
     soldiers: Vec<String>,
     away_soldiers: Vec<String>,
-}
-
-impl TurnusDay {
-    fn print(&self, break_people: &[String]) {
-        println!("{} | {} | {}", self.day, self.turnus_name, self.work_type);
-        for soldier in itertools::sorted(self.soldiers.iter()) {
-            if break_people.iter().any(|x| x == soldier) {
-                println!(" - {} {}", soldier, "(away)")
-            } else {
-                println!(" - {}", soldier)
-            }
-        }
-    }
 }
 
 fn turnus_at_day(turnus: &Turnus, day: Date<Utc>) -> TurnusDay {
@@ -109,6 +97,25 @@ fn pause() {
 }
 
 fn main() -> Result<(), std::io::Error> {
+    let matches = App::new("myapp")
+        .version(env!("CARGO_PKG_VERSION"))
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .arg(
+            Arg::with_name("quiet")
+                .short("q")
+                .long("silent")
+                .takes_value(false)
+                .help("Do not pause at the end of program execution."),
+        )
+        .arg(
+            Arg::with_name("num_days")
+                .short("n")
+                .long("number-of-days")
+                .takes_value(true)
+                .help("Number of future days to print"),
+        )
+        .get_matches();
+
     let mut turnuses = vec![];
     let files = fs::read_dir("turnus")?;
     println!("{}", "Leser input...");
@@ -119,22 +126,60 @@ fn main() -> Result<(), std::io::Error> {
     }
     println!("");
 
-    let today = Utc::now().date();
-    let perm_people = read_break(Utc::now());
-    println!("{}", "Disse personene har fri i dag:");
+    let number_of_days = matches.value_of("num_days").unwrap_or("1");
+    let number_of_days = number_of_days.parse::<i32>().unwrap_or(1);
+
+    let mut day = Utc::now().date();
+    for _ in 0..number_of_days {
+        print_day(day, &turnuses);
+        day = day.succ();
+    }
+
+    if !matches.is_present("quiet") {
+        pause();
+    }
+
+    Ok(())
+}
+
+fn print_day(today: Date<Utc>, turnuses: &[Turnus]) {
+    let mut t = term::stdout().unwrap();
+    t.fg(term::color::GREEN).unwrap();
+    t.attr(term::Attr::Bold).unwrap();
+    writeln!(t, "DAG: {}", today);
+    t.reset().unwrap();
+
+    let perm_people = read_break(today.and_hms(12, 0, 0));
+
+    println!("{}", "Fri:");
     for person in perm_people.iter() {
         println!(" - {}", person);
     }
-    let mut t = term::stdout().unwrap();
-    t.fg(term::color::GREEN).unwrap();
-    writeln!(t, "{}", "\nDagens grupper:").unwrap();
+
     t.reset().unwrap();
+
     for turnus in turnuses {
         let turnus_day = turnus_at_day(&turnus, today);
+
+        t.fg(term::color::BLUE).unwrap();
+        t.attr(term::Attr::Bold).unwrap();
+        let num_working = turnus_day.soldiers.len();
+        writeln!(t, "{}", today);
+        t.reset().unwrap();
+
         turnus_day.print(&perm_people);
     }
+}
 
-    pause();
-
-    Ok(())
+impl TurnusDay {
+    fn print(&self, break_people: &[String]) {
+        println!("{} | {} | {}", self.day, self.turnus_name, self.work_type);
+        for soldier in itertools::sorted(self.soldiers.iter()) {
+            if break_people.iter().any(|x| x == soldier) {
+                println!(" - {} {}", soldier, "(away)")
+            } else {
+                println!(" - {}", soldier)
+            }
+        }
+    }
 }
