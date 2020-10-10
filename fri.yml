@@ -6,3 +6,6 @@
   from: 2020-01-01T00:00:00Z
   to: 2020-12-31T00:00:00Z
   reason: Whatever
+- name: Signe
+  from: 2020-01-01T00:00:00Z
+  to: 2020-12-31T00:00:00Z

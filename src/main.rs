@@ -30,7 +30,7 @@ struct Turnus {
     soldiers: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct Break {
     name: String,
     from: DateTime<Utc>,
@@ -69,7 +69,7 @@ fn read_turnus_file(path: &str) -> Result<Turnus, std::io::Error> {
     return Ok(turnus);
 }
 
-fn read_break(date: DateTime<Utc>) -> Vec<String> {
+fn read_break(date: DateTime<Utc>) -> Vec<Break> {
     let mut file = File::open("fri.yml").expect("Could not find fri.yml");
     let mut contents = String::new();
     file.read_to_string(&mut contents)
@@ -78,7 +78,7 @@ fn read_break(date: DateTime<Utc>) -> Vec<String> {
     let mut free_people = vec![];
     for b in breaks.iter() {
         if b.from < date && b.to > date {
-            free_people.push(b.name.clone());
+            free_people.push(b.clone());
         }
     }
     return free_people;
@@ -102,7 +102,7 @@ fn main() -> Result<(), std::io::Error> {
         .author(env!("CARGO_PKG_AUTHORS"))
         .arg(
             Arg::with_name("quiet")
-                .short("q")
+                .short("s")
                 .long("silent")
                 .takes_value(false)
                 .help("Do not pause at the end of program execution."),
@@ -143,42 +143,69 @@ fn main() -> Result<(), std::io::Error> {
 }
 
 fn print_day(today: Date<Utc>, turnuses: &[Turnus]) {
+    let all_breaks = read_break(today.and_hms(12, 0, 0));
+    let all_work_people: Vec<String> = turnuses
+        .iter()
+        .flat_map(|z| z.soldiers.iter())
+        .map(|x| x.clone())
+        .collect();
+    let breaks_work_people: Vec<Break> = all_breaks
+        .iter()
+        .filter(|x| all_work_people.iter().filter(|y| *y == &x.name).count() > 0)
+        .map(|x| x.clone())
+        .collect();
+
+    let working_count = all_work_people.len() - breaks_work_people.len();
+    let away_count = breaks_work_people.len();
+
+    println!("-------------------------------------------------");
+    println!("");
     let mut t = term::stdout().unwrap();
     t.fg(term::color::GREEN).unwrap();
     t.attr(term::Attr::Bold).unwrap();
-    writeln!(t, "DAG: {}", today);
+    writeln!(
+        t,
+        "{}. På vakt: {}. Borte: {}",
+        today.naive_local().format("%A %d. %B %Y"),
+        working_count,
+        away_count
+    )
+    .unwrap();
     t.reset().unwrap();
-
-    let perm_people = read_break(today.and_hms(12, 0, 0));
-
-    println!("{}", "Fri:");
-    for person in perm_people.iter() {
-        println!(" - {}", person);
-    }
-
-    t.reset().unwrap();
-
     for turnus in turnuses {
         let turnus_day = turnus_at_day(&turnus, today);
 
         t.fg(term::color::BLUE).unwrap();
         t.attr(term::Attr::Bold).unwrap();
-        let num_working = turnus_day.soldiers.len();
-        writeln!(t, "{}", today);
         t.reset().unwrap();
 
-        turnus_day.print(&perm_people);
+        turnus_day.print(&all_breaks);
     }
 }
 
 impl TurnusDay {
-    fn print(&self, break_people: &[String]) {
-        println!("{} | {} | {}", self.day, self.turnus_name, self.work_type);
+    fn print(&self, break_people: &[Break]) {
+        let mut t = term::stdout().unwrap();
+        t.fg(term::color::BLUE).unwrap();
+        t.attr(term::Attr::Bold).unwrap();
+        writeln!(t, "  {} | {}", self.turnus_name, self.work_type).unwrap();
+        t.reset().unwrap();
         for soldier in itertools::sorted(self.soldiers.iter()) {
-            if break_people.iter().any(|x| x == soldier) {
-                println!(" - {} {}", soldier, "(away)")
+            if let Some(break_) = break_people.iter().filter(|x| &x.name == soldier).next() {
+                t.fg(term::color::RED).unwrap();
+                writeln!(
+                    t,
+                    "   - {} (borte: {})",
+                    soldier,
+                    break_
+                        .reason
+                        .as_ref()
+                        .unwrap_or(&"ingen god grunn".to_string())
+                )
+                .unwrap();
+                t.reset().unwrap();
             } else {
-                println!(" - {}", soldier)
+                writeln!(t, "   - {}", soldier).unwrap();
             }
         }
     }
