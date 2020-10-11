@@ -3,6 +3,7 @@ use clap::App;
 use clap::Arg;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::error::Error;
 use std::fmt;
 use std::fs::{self, File};
 use std::io;
@@ -47,21 +48,26 @@ struct TurnusDay {
     away_soldiers: Vec<String>,
 }
 
-fn turnus_at_day(turnus: &Turnus, day: Date<Utc>) -> TurnusDay {
-    let number_of_days = (day - turnus.start.date()).num_days() % 28;
-    let work_type = turnus.days.get(&number_of_days).unwrap();
+fn turnus_at_day(turnus: &Turnus, day: Date<Utc>) -> Result<TurnusDay, Box<dyn Error>> {
+    let number_of_days = (day - turnus.start.date()).num_days() % turnus.days.len() as i64 + 1;
+    let work_type = turnus.days.get(&number_of_days).ok_or_else(|| {
+        format!(
+            "Turnus '{}' har noe feil med dager. Finner ikke dag {}",
+            turnus.name, number_of_days
+        )
+    })?;
 
-    TurnusDay {
+    Ok(TurnusDay {
         work_type: *work_type,
         away_soldiers: vec![],
         soldiers: turnus.soldiers.clone(),
         day: day,
         turnus_name: turnus.name.clone(),
-    }
+    })
 }
 
 fn read_turnus_file(path: &str) -> Result<Turnus, std::io::Error> {
-    println!("Reading {}", path);
+    println!("  Leser turnusfil: {}", path);
     let mut file = File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
@@ -96,7 +102,20 @@ fn pause() {
     let _ = stdin.read(&mut [0u8]).unwrap();
 }
 
-fn main() -> Result<(), std::io::Error> {
+fn ask_for_days() -> i32 {
+    print!("Hvor mange dager ønsker du å se? ");
+    std::io::stdout().flush().unwrap();
+    let mut input = String::new();
+    match io::stdin().read_line(&mut input) {
+        Ok(_n) => input.trim().parse::<i32>().unwrap(),
+        Err(error) => {
+            println!("Failed to read input from terminal: {}", error);
+            1
+        }
+    }
+}
+
+fn main() {
     let matches = App::new("myapp")
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -116,33 +135,45 @@ fn main() -> Result<(), std::io::Error> {
         )
         .get_matches();
 
-    let mut turnuses = vec![];
-    let files = fs::read_dir("turnus")?;
-    println!("{}", "Leser input...");
-    for file in files {
-        let file_path = file?.path().to_str().unwrap().to_string();
-        let turnus = read_turnus_file(&file_path)?;
-        turnuses.push(turnus);
-    }
-    println!("");
-
-    let number_of_days = matches.value_of("num_days").unwrap_or("1");
-    let number_of_days = number_of_days.parse::<i32>().unwrap_or(1);
-
-    let mut day = Utc::now().date();
-    for _ in 0..number_of_days {
-        print_day(day, &turnuses);
-        day = day.succ();
+    match run(&matches) {
+        Ok(()) => (),
+        Err(error) => println!("Failed: {:#?}", error),
     }
 
     if !matches.is_present("quiet") {
         pause();
     }
+}
+
+fn run(matches: &clap::ArgMatches) -> Result<(), Box<dyn Error>> {
+    let mut turnuses = vec![];
+    let files = fs::read_dir("turnus")?;
+    println!("{}", "Leser input...");
+    for file in files {
+        let file_path = file?
+            .path()
+            .to_str()
+            .ok_or("Can't get file path")?
+            .to_string();
+        let turnus = read_turnus_file(&file_path)?;
+        turnuses.push(turnus);
+    }
+
+    let number_of_days = match matches.value_of("num_days") {
+        Some(value) => value.parse::<i32>()?,
+        None => ask_for_days(),
+    };
+
+    let mut day = Utc::now().date();
+    for _ in 0..number_of_days {
+        print_day(day, &turnuses)?;
+        day = day.succ();
+    }
 
     Ok(())
 }
 
-fn print_day(today: Date<Utc>, turnuses: &[Turnus]) {
+fn print_day(today: Date<Utc>, turnuses: &[Turnus]) -> Result<(), Box<dyn Error>> {
     let all_breaks = read_break(today.and_hms(12, 0, 0));
     let all_work_people: Vec<String> = turnuses
         .iter()
@@ -160,39 +191,40 @@ fn print_day(today: Date<Utc>, turnuses: &[Turnus]) {
 
     println!("-------------------------------------------------");
     println!("");
-    let mut t = term::stdout().unwrap();
-    t.fg(term::color::GREEN).unwrap();
-    t.attr(term::Attr::Bold).unwrap();
+    let mut t = term::stdout().ok_or("Could not get stdout")?;
+    t.fg(term::color::GREEN)?;
+    t.attr(term::Attr::Bold)?;
     writeln!(
         t,
         "{}. På vakt: {}. Borte: {}",
         today.naive_local().format("%A %d. %B %Y"),
         working_count,
         away_count
-    )
-    .unwrap();
-    t.reset().unwrap();
+    )?;
+    t.reset()?;
     for turnus in turnuses {
-        let turnus_day = turnus_at_day(&turnus, today);
+        let turnus_day = turnus_at_day(&turnus, today)?;
 
-        t.fg(term::color::BLUE).unwrap();
-        t.attr(term::Attr::Bold).unwrap();
-        t.reset().unwrap();
+        t.fg(term::color::BLUE)?;
+        t.attr(term::Attr::Bold)?;
+        t.reset()?;
 
-        turnus_day.print(&all_breaks);
+        turnus_day.print(&all_breaks)?;
     }
+
+    Ok(())
 }
 
 impl TurnusDay {
-    fn print(&self, break_people: &[Break]) {
-        let mut t = term::stdout().unwrap();
-        t.fg(term::color::BLUE).unwrap();
-        t.attr(term::Attr::Bold).unwrap();
-        writeln!(t, "  {} | {}", self.turnus_name, self.work_type).unwrap();
-        t.reset().unwrap();
+    fn print(&self, break_people: &[Break]) -> Result<(), Box<dyn Error>> {
+        let mut t = term::stdout().ok_or("Failed get stdout")?;
+        t.fg(term::color::BLUE)?;
+        t.attr(term::Attr::Bold)?;
+        writeln!(t, "  {} | {}", self.turnus_name, self.work_type)?;
+        t.reset()?;
         for soldier in itertools::sorted(self.soldiers.iter()) {
             if let Some(break_) = break_people.iter().filter(|x| &x.name == soldier).next() {
-                t.fg(term::color::RED).unwrap();
+                t.fg(term::color::RED)?;
                 writeln!(
                     t,
                     "   - {} (borte: {})",
@@ -201,12 +233,12 @@ impl TurnusDay {
                         .reason
                         .as_ref()
                         .unwrap_or(&"ingen god grunn".to_string())
-                )
-                .unwrap();
-                t.reset().unwrap();
+                )?;
+                t.reset()?;
             } else {
-                writeln!(t, "   - {}", soldier).unwrap();
+                writeln!(t, "   - {}", soldier)?;
             }
         }
+        Ok(())
     }
 }
