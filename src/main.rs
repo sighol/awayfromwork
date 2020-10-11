@@ -186,8 +186,25 @@ fn print_day(today: Date<Utc>, turnuses: &[Turnus]) -> Result<(), Box<dyn Error>
         .map(|x| x.clone())
         .collect();
 
-    let working_count = all_work_people.len() - breaks_work_people.len();
-    let away_count = breaks_work_people.len();
+    let turnus_days: Vec<TurnusDay> = turnuses
+        .iter()
+        .map(|x| turnus_at_day(x, today))
+        .collect::<Result<Vec<TurnusDay>, Box<dyn Error>>>()?;
+    let perm_people: Vec<String> = turnus_days
+        .iter()
+        .filter(|x| x.work_type == WorkType::Perm)
+        .flat_map(|x| x.soldiers.clone())
+        .collect();
+
+    let mut perm_count = perm_people.len();
+    let perm_borte: Vec<&String> = perm_people
+        .iter()
+        .filter(|p| breaks_work_people.iter().any(|x| &x.name == *p))
+        .collect();
+    perm_count -= perm_borte.len();
+
+    let working_count = all_work_people.len() - breaks_work_people.len() - perm_count;
+    let away_count = breaks_work_people.len() + perm_count;
 
     println!("-------------------------------------------------");
     println!("");
@@ -196,7 +213,7 @@ fn print_day(today: Date<Utc>, turnuses: &[Turnus]) -> Result<(), Box<dyn Error>
     t.attr(term::Attr::Bold)?;
     writeln!(
         t,
-        "{}. På vakt: {}. Borte: {}",
+        "{}. På leir: {}. Borte: {}",
         today.naive_local().format("%A %d. %B %Y"),
         working_count,
         away_count
@@ -223,7 +240,11 @@ impl TurnusDay {
         writeln!(t, "  {} | {}", self.turnus_name, self.work_type)?;
         t.reset()?;
         for soldier in itertools::sorted(self.soldiers.iter()) {
-            if let Some(break_) = break_people.iter().filter(|x| &x.name == soldier).next() {
+            if self.work_type == WorkType::Perm {
+                t.fg(term::color::RED)?;
+                writeln!(t, "   - {} (perm)", soldier)?;
+                t.reset()?;
+            } else if let Some(break_) = break_people.iter().filter(|x| &x.name == soldier).next() {
                 t.fg(term::color::RED)?;
                 writeln!(
                     t,
