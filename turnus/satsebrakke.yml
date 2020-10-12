@@ -1,10 +1,12 @@
-name: Vaktlag 2
-start: "2020-08-01T00:00:00Z"
+name: Satsebreakke
+start: "2020-08-15T00:00:00Z"
 soldiers:
-    - Sigurd
+    - Johannes
     - Terje
-    - Frode
-    - Jostein
+    - Fredrik
+    - Håvard
+    - Svein
+    - Torleif
 days:
     1: Night
     2: Night
